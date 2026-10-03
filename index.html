@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <title>家裡補一下｜家庭消耗品補貨助手</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="icon-180.png">
-  <link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
   <div class="shell">
@@ -42,6 +42,6 @@
   <dialog id="item-dialog" aria-labelledby="item-dialog-title"><div class="dialog-heading"><h2 id="item-dialog-title">品項操作</h2><button data-close class="quiet">關閉</button></div><div class="item-menu"><button id="edit-open" class="secondary" type="button">修改品項</button><button id="item-history" class="secondary" type="button">補貨紀錄</button><button id="cancel-low" class="secondary" type="button" hidden>取消待購</button><button id="delete-open" class="danger-quiet" type="button">刪除品項</button></div></dialog>
   <dialog id="edit-dialog" aria-labelledby="edit-title"><form id="edit-form"><div class="dialog-heading"><h2 id="edit-title">修改品項</h2><button type="button" data-close class="quiet">取消</button></div><label for="edit-name">品項名稱</label><input id="edit-name" name="name" maxlength="80" required><label for="edit-category">分類</label><select id="edit-category" name="category"><option>浴廁</option><option>清潔</option><option>廚房</option><option>食品</option><option>個人用品</option><option>其他</option></select><p class="muted">只修改名稱與分類，補貨紀錄會保留。</p><p id="edit-conflict" class="conflict" role="status" hidden></p><button id="edit-reload" class="secondary" type="button" hidden>捨棄輸入，載入最新資料</button><button id="edit-save" class="primary" type="submit">儲存修改</button></form></dialog>
   <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description"><h2 id="delete-title">刪除品項？</h2><p id="delete-description">將從目前用品清單移除「<strong id="delete-name"></strong>」。補貨歷史與品項資料會保留，不會永久清除。此版尚未提供還原按鈕。</p><p id="delete-conflict" class="conflict" role="status" hidden></p><div class="confirm-actions"><button type="button" data-close class="secondary" autofocus>取消</button><button id="delete-confirm" type="button" class="danger">確認刪除</button></div></dialog>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>

@@ -2,6 +2,8 @@
 
 ## v2：2026-10-03
 
+- 首次 Pages 部署成功，公開 index.html／app.js／styles.css／list.mjs HTTP 200 且內容與發布檔一致。瀏覽器重新載入後觀察到舊程式快取（新視窗節點存在但分類按鈕未初始化），故 index.html 對 app.js 與 styles.css 加上 `?v=2`，避免新 HTML 搭配舊資產。
+
 - 唯讀核對 GitHub 原始碼與正式 Supabase catalog：歷史外鍵 ON DELETE CASCADE、version、現有 RPC、SELECT-only grants 與 RLS。未執行正式資料變更。
 - Node 內建測試 12/12 通過（既有 7 項、新增 5 項）；app.js 語法檢查通過。新增涵蓋部分名稱、搜尋與分類交集、無結果、NFKC、非目前家庭／封存排除、排序穩定及原陣列不變、編輯名稱不影響歷史週期。
 - 本機兩個來源視窗使用共享記憶體模擬後端，載入真實前端檔案與 api.mjs。A 修改、B 讀取與反向修改通過；A 未儲存草稿遇到 B 更新後保留草稿、停用儲存、載入最新資料通過。這不是正式 Supabase RLS 測試。
