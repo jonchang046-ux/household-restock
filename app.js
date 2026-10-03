@@ -1,12 +1,14 @@
 import { config } from './config.js';
 import { Backend } from './api.mjs';
 import { estimate } from './cycle.mjs';
+import { categories, selectItems } from './list.mjs';
 
 const $ = id => document.getElementById(id);
 const api = new Backend(config);
 let snapshot = { households: [], items: [], history: [] };
 let selected = '', loading = false, busy = false, generation = 0;
 let refreshTask = null;
+let searchText = '', categoryFilter = '', managedItem = null, editItem = null, deleteItem = null;
 const date = value => new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', year: 'numeric' }).format(new Date(value));
 function notice(message) {
   $('notice').textContent = message; $('notice').hidden = !message;
@@ -16,6 +18,10 @@ function notice(message) {
 }
 function message(e) {
   if (e.message.includes('STALE_ITEM')) return '家人已更新這個品項，已重新讀取；請確認最新狀態。';
+  if (e.message.includes('ITEM_ARCHIVED')) return '這個品項已被刪除，歷史仍保留。請關閉視窗查看最新清單。';
+  if (e.message.includes('INVALID_NAME')) return '請輸入 1 到 80 個字的品項名稱。';
+  if (e.message.includes('INVALID_CATEGORY')) return '請選擇有效的分類。';
+  if (e.code === 'PGRST202') return '品項管理功能尚未啟用，請管理者確認 v2 migration 已成功執行。';
   if (e.message.includes('NOT_MEMBER')) return '你目前不是這個家庭的成員，請聯絡管理者。';
   if (e.message.includes('Invalid login credentials')) return 'Email 或密碼不正確，請再確認。';
   if (e.message.includes('Failed to fetch') || e.name === 'TimeoutError') return '目前無法連線。變更尚未確認，請重新整理後確認狀態。';
@@ -27,6 +33,7 @@ function view() {
   const signedIn = !!api.session();
   $('login').hidden = signedIn; $('app').hidden = !signedIn; $('account-button').hidden = !signedIn;
   if (signedIn) { $('email').textContent = api.session().user.email; $('user-id').value = api.session().user.id; }
+  else document.querySelectorAll('dialog[open]').forEach(d => d.close());
 }
 function render() {
   const previous = selected;
@@ -36,28 +43,32 @@ function render() {
   $('house-id').value = selected;
   $('house-title').textContent = snapshot.households.find(h => h.id === selected)?.name || '家裡的常用品';
   $('no-house').hidden = !!selected; $('lists').hidden = !selected; $('add-open').hidden = !selected;
-  if (previous !== selected && $('add-dialog').open) $('add-dialog').close();
-  const groups = { low: [], possible: [], normal: [] };
-  for (const item of snapshot.items.filter(i => i.household_id === selected)) groups[estimate(item, snapshot.history).status].push(item);
+  $('browse').hidden = !selected;
+  if (previous !== selected) document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  const {groups, total, shown, filtered} = selectItems(snapshot, selected, searchText, categoryFilter);
+  $('filter-summary').textContent = filtered ? `找到 ${shown} 項／共 ${total} 項${shown === 0 ? '，試試其他名稱或清除篩選。' : ''}` : `共 ${total} 項常用品`;
+  for (const button of $('category-filters').children) button.setAttribute('aria-pressed', String(button.dataset.category === categoryFilter));
   for (const [status, items] of Object.entries(groups)) {
     $(''+status+'-count').textContent = items.length;
     const container = $(status+'-list'); container.replaceChildren();
-    items.sort((a,b) => a.name.localeCompare(b.name, 'zh-Hant'));
     for (const item of items) container.append(card(item));
-    if (!items.length) container.append(el('p', 'empty', {low:'目前沒有待購品項，家裡都準備好了。',possible:'有足夠補貨紀錄後，會在這裡提醒你。',normal:'把經常買的用品加進來，下次一鍵記下。'}[status]));
+    if (!items.length) container.append(el('p', 'empty', filtered ? '此區沒有符合篩選的品項。' : {low:'目前沒有待購品項，家裡都準備好了。',possible:'有足夠補貨紀錄後，會在這裡提醒你。',normal:'把經常買的用品加進來，下次一鍵記下。'}[status]));
   }
+  updateDialogState();
 }
 function action(label, style, handler) { const b = el('button', style, label); b.type = 'button'; b.addEventListener('click', handler); b.disabled = busy; return b; }
 function card(item) {
   const cycle = estimate(item, snapshot.history);
   const node = el('article', 'item');
-  const info = el('div'); info.append(el('span', 'category', item.category), el('h3', '', item.name));
+  const info = el('div', 'item-info'); info.append(el('span', 'category', item.category), el('h3', '', item.name));
   info.append(el('p', 'meta', cycle.last ? `上次補貨 ${date(cycle.last)}` : '尚未記錄補貨'));
   if (cycle.average !== null) info.append(el('p', 'meta', `約 ${Math.round(cycle.average)} 天補一次${cycle.samples === 1 ? ' · 初步估計' : ''}`));
   const actions = el('div', 'item-actions');
-  actions.append(action('紀錄', 'quiet', () => showHistory(item)));
+  const more = action('⋯', 'quiet item-more', () => openItemMenu(item));
+  more.setAttribute('aria-label', `${item.name}的更多操作`);
+  more.setAttribute('aria-haspopup', 'dialog');
+  node.append(more);
   if (item.status === 'low') {
-    actions.append(action('取消待購', 'quiet', () => mutate(item, 'normal')));
     actions.append(action('✓ 已補貨', 'primary', () => mutate(item, 'restock')));
   } else {
     actions.append(action('已補貨', 'secondary', () => mutate(item, 'restock')));
@@ -97,8 +108,74 @@ async function run(button, fn) {
   if (busy) return; busy = true; notice('');
   document.querySelectorAll('button').forEach(b => b.disabled = true);
   try { if (refreshTask) await refreshTask.catch(() => {}); await fn(); } catch (e) { notice(message(e)); }
-  finally { busy = false; document.querySelectorAll('button').forEach(b => b.disabled = false); }
+  finally { busy = false; document.querySelectorAll('button').forEach(b => b.disabled = false); updateDialogState(); }
 }
+function currentItem(item) { return item && snapshot.items.find(i => i.id === item.id && i.household_id === selected && !i.archived_at); }
+function updateDialogState() {
+  const latestEdit = currentItem(editItem);
+  const editChanged = !!editItem && (!latestEdit || latestEdit.version !== editItem.version);
+  $('edit-save').disabled = busy || !latestEdit || editChanged;
+  $('edit-conflict').hidden = !editChanged;
+  $('edit-conflict').textContent = latestEdit ? `家人已更新此品項（目前：${latestEdit.name}／${latestEdit.category}）。請先載入最新資料，再修改。` : '品項已被刪除，或你已無法存取這個家庭。';
+  $('edit-reload').hidden = !editChanged || !latestEdit;
+  $('edit-reload').disabled = busy;
+  const latestDelete = currentItem(deleteItem);
+  const deleteChanged = !!deleteItem && (!latestDelete || latestDelete.version !== deleteItem.version);
+  $('delete-confirm').disabled = busy || !latestDelete || deleteChanged;
+  $('delete-conflict').hidden = !deleteChanged;
+  $('delete-conflict').textContent = latestDelete ? '此品項已更新。請取消，回清單重新確認品項後再刪除。' : '品項已被刪除，或你已無法存取這個家庭。';
+  if ($('item-dialog').open && !currentItem(managedItem)) $('item-dialog').close();
+}
+function openItemMenu(item) {
+  managedItem = item;
+  $('item-dialog-title').textContent = item.name;
+  $('cancel-low').hidden = item.status !== 'low';
+  notice(''); $('item-dialog').showModal();
+}
+function loadEdit(item) {
+  editItem = { ...item }; // 保留開啟時的 version；背景同步不能默默取代它。
+  $('edit-name').value = item.name; $('edit-category').value = item.category;
+  updateDialogState();
+}
+async function manageMutation(name, args, dialog, success) {
+  await run(null, async () => {
+    try { await api.rpc(name, args); }
+    catch (e) { await refresh().catch(() => {}); throw e; }
+    dialog.close();
+    await refresh(); notice(success);
+  });
+}
+for (const category of ['', ...categories]) {
+  const button = action(category || '全部', 'category-chip', () => { categoryFilter = category; render(); });
+  button.dataset.category = category; button.setAttribute('aria-pressed', String(category === ''));
+  $('category-filters').append(button);
+}
+$('search').addEventListener('input', e => { searchText = e.target.value; render(); });
+$('clear-filters').addEventListener('click', () => { searchText = ''; categoryFilter = ''; $('search').value = ''; render(); $('search').focus(); });
+$('edit-open').addEventListener('click', () => {
+  const item = currentItem(managedItem); if (!item) return;
+  $('item-dialog').close(); loadEdit(item); $('edit-dialog').showModal(); $('edit-name').focus();
+});
+$('edit-reload').addEventListener('click', () => { const item = currentItem(editItem); if (item) { notice(''); loadEdit(item); $('edit-name').focus(); } });
+$('edit-form').addEventListener('submit', e => {
+  e.preventDefault(); if (busy || $('edit-save').disabled) return;
+  const name = $('edit-name').value.trim();
+  if (!name) { notice('請輸入品項名稱，不能只有空白。'); $('edit-name').focus(); return; }
+  manageMutation('restock_update_item', {p_item_id:editItem.id, p_version:editItem.version, p_name:name, p_category:$('edit-category').value}, $('edit-dialog'), '品項已更新，補貨紀錄保持不變。');
+});
+$('delete-open').addEventListener('click', () => {
+  const item = currentItem(managedItem); if (!item) return;
+  deleteItem = { ...item }; $('delete-name').textContent = item.name;
+  $('item-dialog').close(); updateDialogState(); $('delete-dialog').showModal();
+  $('delete-dialog').querySelector('[data-close]').focus();
+});
+$('delete-confirm').addEventListener('click', () => {
+  if (busy || $('delete-confirm').disabled) return;
+  manageMutation('restock_delete_item', {p_item_id:deleteItem.id,p_version:deleteItem.version}, $('delete-dialog'), '已從目前用品移除，補貨歷史已保留。');
+});
+$('item-history').addEventListener('click', () => { const item = currentItem(managedItem); if (item) { $('item-dialog').close(); showHistory(item); } });
+$('cancel-low').addEventListener('click', () => { const item = currentItem(managedItem); if (item) { $('item-dialog').close(); mutate(item, 'normal'); } });
+for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
 async function mutate(item, operation) {
   await run(null, async () => {
     // 無樂觀更新：伺服器確認成功後才移動品項。

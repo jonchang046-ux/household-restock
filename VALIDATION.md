@@ -1,5 +1,20 @@
 # 驗證紀錄
 
+## v2：2026-10-03
+
+- 唯讀核對 GitHub 原始碼與正式 Supabase catalog：歷史外鍵 ON DELETE CASCADE、version、現有 RPC、SELECT-only grants 與 RLS。未執行正式資料變更。
+- Node 內建測試 12/12 通過（既有 7 項、新增 5 項）；app.js 語法檢查通過。新增涵蓋部分名稱、搜尋與分類交集、無結果、NFKC、非目前家庭／封存排除、排序穩定及原陣列不變、編輯名稱不影響歷史週期。
+- 本機兩個來源視窗使用共享記憶體模擬後端，載入真實前端檔案與 api.mjs。A 修改、B 讀取與反向修改通過；A 未儲存草稿遇到 B 更新後保留草稿、停用儲存、載入最新資料通過。這不是正式 Supabase RLS 測試。
+- 瀏覽器驗證搜尋「洗」＋「清潔」只顯示洗衣精，仍保留可能快沒了與平均 20 天提示；改名／分類後原兩筆歷史與週期仍在。
+- 具名刪除二次確認、預設聚焦取消、取消後品項仍在、確認封存後兩視窗都移除通過。
+- 原有「快沒了 → 已補貨 → 補貨紀錄」通過；沒有觀察到前端 console error。
+- 窄手機畫面實際 innerWidth 約 319px、文件寬 304px，無全頁橫向溢出；分類列本身可水平滑動。嘗試 viewport override 未使工具實際寬度改變，因此不宣稱桌面或 390px 驗證成功。iPhone 實機／Safari／主畫面與桌面仍待驗收。
+- 使用者確認 002 migration 成功後，已核對正式 archived_at 欄位及新 RPC；透過 Supabase execute_sql 執行完整 security-check-v2.sql，所有斷言成功、交易回滾。驗證同家庭 A/B 互相更新及快照可見、過期／空 version 拒絕、輸入驗證、直接表 UPDATE/DELETE 拒絕、非成員及 anon 拒絕、修改及封存保留原 ID／日期／歷史、封存不在快照且不能再補貨。執行後確認無原測試名稱殘留。這是正式 PostgreSQL 的角色／JWT 模擬測試，不代表兩支手機或真正並行交易已測。
+- 安全 advisors 已檢查：本 App 的 authenticated SECURITY DEFINER 可呼叫提示符合既有 RPC 設計，成員檢查及 EXECUTE 範圍已由回歸測試驗證。另有共用 `rls_auto_enable` 匿名可執行提示及 Auth 洩漏密碼保護未啟用，未改動本次範圍外設定。參考：[函式權限提示](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)、[密碼保護](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)。
+- SQL 測試只寫入暫時品項／歷史並 ROLLBACK，使用既有會員模擬身分，不更動 Auth 或現有業務列。另需雙手機驗收，不能取代真實同時交易測試。
+
+## 以下為 v1 既有紀錄
+
 日期：2026-09-29
 
 ## 已驗證

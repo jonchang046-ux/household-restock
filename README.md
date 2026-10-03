@@ -1,5 +1,7 @@
 # 家裡補一下：啟用與驗收
 
+**既有網站升級 v2：請先閱讀 [V2-UPGRADE.md](V2-UPGRADE.md)。只執行 `002_restock_v2.sql`，不要重跑 001、重建帳號或家庭。以下初始建置步驟只供新環境參考。**
+
 這是獨立、手機優先的靜態 HTML／CSS／JavaScript App，可直接放上 GitHub Pages，沒有 npm 套件或 build 步驟。後端使用你現有的 life-tools Supabase Project。
 
 ## 1. 建立資料庫（一次完成）
@@ -74,8 +76,8 @@ where household_id = '指定家庭ID'::uuid
 1. A 新增「衛生紙」，分類「浴廁」，不填數量。B 在 10 秒內（或重新整理）應看到。
 2. A 按「快沒了」。A、B 的「該買了」都出現衛生紙。
 3. B 按「已補貨」。待購品項消失，「其他常用品」出現衛生紙，顯示上次補貨日期。
-4. A 開啟「紀錄」，應有一筆補貨紀錄。再次實際補貨會保留新的一筆，不會覆寫歷史。
-5. 誤標時按「取消待購」；不會新增補貨紀錄。
+4. A 開啟品項「⋯ → 補貨紀錄」，應有一筆補貨紀錄。再次實際補貨會保留新的一筆，不會覆寫歷史。
+5. 誤標時按「⋯ → 取消待購」；不會新增補貨紀錄。
 6. 兩台在尚未同步、同一品項同一版本下同時按「已補貨」，應只有一筆寫入；另一台收到「家人已更新」訊息。若一台已同步新版本後再按，視為新的補貨操作。
 7. 新增未加入家庭的帳號 C：不得看到 A／B 的家庭或品項。C 自己建立家庭後，也只能看到自己的資料。
 8. A 登出後清單清空，重新開啟必須登入。重新整理或重開已登入的 App 會保留登入狀態。
@@ -91,7 +93,8 @@ where household_id = '指定家庭ID'::uuid
 - 至少兩個不同 UTC 日期的補貨紀錄，取相鄰日期間隔的算術平均。相同 UTC 日期合併後計算，原始每筆歷史仍保留。
 - 經過平均週期的 80% 時顯示「可能快沒了」；只有一段間隔時標「初步估計」。顯示日期使用手機時區；計算日期固定 UTC，避免兩手機不同時區改變平均。
 - 新增品項不代表今天買過，不會捏造第一筆補貨日期。
-- 順序：確定待購 → 可能快沒了 → 其他常用品；快沒了優先於估計狀態。
+- 順序：確定待購 → 可能快沒了 → 其他常用品；同組依分類選項順序、中文名稱、item ID 穩定排序。搜尋名稱與分類篩選可同時使用。
+- v2 的「刪除」只設定 `archived_at` 並增加 version，保留原 item ID、名稱、分類、日期與補貨歷史。已封存品項不出現在目前清單；此版沒有封存紀錄瀏覽或還原 UI。
 - 每 10 秒、回到前景、網路恢復、操作完成時同步。這是輪詢，不是 Supabase Realtime；不用另開 Realtime publication。
 
 ## 7. 安全與維護
@@ -103,7 +106,7 @@ where household_id = '指定家庭ID'::uuid
 - 登入透過 Supabase Auth REST；瀏覽器只保存 Supabase session，不保存密碼。refresh token 透過瀏覽器 Web Locks 協調同來源分頁，沒有 Web Locks 時同頁請求仍共用一次刷新。
 - 所有品項名稱以 `textContent` 顯示，避免把輸入當 HTML。App 沒有第三方前端程式或 CDN 依賴。
 - 目前快照一次載入家庭的完整歷史，適合小型私人 MVP；大量歷史需第二版分頁／伺服器聚合。
-- 尚未增加品項編輯／刪除、成員管理 UI、自助註冊／密碼重設、正式邀請、離線佇列、通知、條碼、AI、自動購物、複雜統計。
+- 尚未增加封存品項還原／歷史瀏覽、成員管理 UI、自助註冊／密碼重設、正式邀請、離線佇列、通知、條碼、AI、自動購物、複雜統計。
 
 ## 8. 測試與檔案
 
@@ -111,11 +114,14 @@ where household_id = '指定家庭ID'::uuid
 - `app.js`：一鍵操作、清單分組、同步與錯誤處理。
 - `api.mjs`：Supabase Auth、session 更新及 RPC。
 - `cycle.mjs`：可獨立測試的週期估計。
+- `list.mjs`：名稱搜尋、分類交集、穩定排序與狀態分組。
 - `config.js`：公開連線設定。
 - `manifest.webmanifest`、`icon.svg`、`icon-*.png`：主畫面資訊與圖示。
 - `supabase/001_household_restock.sql`：完整一次性 migration。
+- `supabase/002_restock_v2.sql`：既有網站的非破壞性 v2 migration。
+- `supabase/security-check-v2.sql`：v2 權限與歷史保留回歸測試，使用既有成員，測試資料最後 ROLLBACK。
 - `supabase/security-check.sql`：migration 後可手動執行的權限回歸測試，最後 ROLLBACK，不保留測試使用者或資料。只在 SQL Editor 執行，勿透過前端。
-- `tests/core.test.mjs`：Node 內建測試，不需套件；在本資料夾執行 `node --test tests/core.test.mjs`。
+- `tests/core.test.mjs`、`tests/list.test.mjs`：Node 內建測試，不需套件；在本資料夾執行 `node --test tests/core.test.mjs tests/list.test.mjs`。
 
 獨立目錄與 `life_`／`restock_` 命名不會修改其他頁面。共用 Project 的 Auth 設定可能影響其他 App，因此沿用現有設定，只加入必要的網址與成員。
 
