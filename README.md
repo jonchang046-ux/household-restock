@@ -1,5 +1,7 @@
 # 家裡補一下：啟用與驗收
 
+**購買途徑擴充：請閱讀 [PURCHASE-SOURCES.md](PURCHASE-SOURCES.md)。此功能另需 `003_purchase_sources.sql`，來源可由家庭自行新增／改名，品項可多選，並與名稱搜尋、使用分類組合篩選。發布前請先完成 migration 驗證。**
+
 **既有網站升級 v2：請先閱讀 [V2-UPGRADE.md](V2-UPGRADE.md)。只執行 `002_restock_v2.sql`，不要重跑 001、重建帳號或家庭。以下初始建置步驟只供新環境參考。**
 
 這是獨立、手機優先的靜態 HTML／CSS／JavaScript App，可直接放上 GitHub Pages，沒有 npm 套件或 build 步驟。後端使用你現有的 life-tools Supabase Project。

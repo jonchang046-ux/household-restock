@@ -12,11 +12,24 @@ export function compareItems(a, b) {
 }
 
 // 純函式：不修改快照，篩選前後維持狀態、分類、名稱、ID 的穩定順序。
-export function selectItems(snapshot, householdId, query = '', category = '', now = Date.now()) {
+export function itemSourceIds(snapshot, item) {
+  return [...new Set((snapshot.item_sources || []).filter(link => link.item_id === item.id && link.household_id === item.household_id).map(link => link.source_id))];
+}
+
+export function householdSources(snapshot, householdId) {
+  return (snapshot.sources || []).filter(source => source.household_id === householdId)
+    .slice().sort((a,b) => collator.compare(a.name,b.name) || a.id.localeCompare(b.id));
+}
+
+export function selectItems(snapshot, householdId, query = '', category = '', now = Date.now(), sourceId = '') {
   const all = snapshot.items.filter(item => item.household_id === householdId && !item.archived_at);
   const needle = normalize(query);
-  const visible = all.filter(item => (!category || item.category === category) && normalize(item.name).includes(needle)).sort(compareItems);
+  const visible = all.filter(item => {
+    const ids = itemSourceIds(snapshot, item);
+    return (!category || item.category === category) && normalize(item.name).includes(needle)
+      && (!sourceId || (sourceId === 'unset' ? ids.length === 0 : ids.includes(sourceId)));
+  }).sort(compareItems);
   const groups = { low: [], possible: [], normal: [] };
   for (const item of visible) groups[estimate(item, snapshot.history, now).status].push(item);
-  return { groups, total: all.length, shown: visible.length, filtered: !!needle || !!category };
+  return { groups, total: all.length, shown: visible.length, filtered: !!needle || !!category || !!sourceId };
 }

@@ -1,7 +1,7 @@
 import { config } from './config.js';
 import { Backend } from './api.mjs';
 import { estimate } from './cycle.mjs';
-import { categories, selectItems } from './list.mjs';
+import { categories, selectItems, itemSourceIds, householdSources } from './list.mjs?v=3';
 
 const $ = id => document.getElementById(id);
 const api = new Backend(config);
@@ -9,19 +9,23 @@ let snapshot = { households: [], items: [], history: [] };
 let selected = '', loading = false, busy = false, generation = 0;
 let refreshTask = null;
 let searchText = '', categoryFilter = '', managedItem = null, editItem = null, deleteItem = null;
+let sourceFilter = '', sourceEditing = null, sourceCatalogKey = '';
 const date = value => new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', year: 'numeric' }).format(new Date(value));
 function notice(message) {
   $('notice').textContent = message; $('notice').hidden = !message;
   document.querySelectorAll('.dialog-error').forEach(n => n.remove());
-  const dialog = document.querySelector('dialog[open]');
+  const dialog = [...document.querySelectorAll('dialog[open]')].at(-1);
   if (message && dialog) { const error = el('p', 'notice dialog-error', message); error.setAttribute('role','alert'); dialog.prepend(error); }
 }
 function message(e) {
+  if (e.message.includes('STALE_SOURCE')) return '家人已修改此購買途徑，請取消改名並重新選擇最新資料。';
+  if (e.message.includes('DUPLICATE_SOURCE')) return '這個家庭已有同名購買途徑，請使用現有選項。';
+  if (e.message.includes('INVALID_SOURCES')) return '購買途徑無效或不屬於這個家庭，請重新整理後再選擇。';
   if (e.message.includes('STALE_ITEM')) return '家人已更新這個品項，已重新讀取；請確認最新狀態。';
   if (e.message.includes('ITEM_ARCHIVED')) return '這個品項已被刪除，歷史仍保留。請關閉視窗查看最新清單。';
   if (e.message.includes('INVALID_NAME')) return '請輸入 1 到 80 個字的品項名稱。';
   if (e.message.includes('INVALID_CATEGORY')) return '請選擇有效的分類。';
-  if (e.code === 'PGRST202') return '品項管理功能尚未啟用，請管理者確認 v2 migration 已成功執行。';
+  if (e.code === 'PGRST202') return '功能尚未啟用，請管理者確認對應的 migration 已成功執行。';
   if (e.message.includes('NOT_MEMBER')) return '你目前不是這個家庭的成員，請聯絡管理者。';
   if (e.message.includes('Invalid login credentials')) return 'Email 或密碼不正確，請再確認。';
   if (e.message.includes('Failed to fetch') || e.name === 'TimeoutError') return '目前無法連線。變更尚未確認，請重新整理後確認狀態。';
@@ -44,8 +48,9 @@ function render() {
   $('house-title').textContent = snapshot.households.find(h => h.id === selected)?.name || '家裡的常用品';
   $('no-house').hidden = !!selected; $('lists').hidden = !selected; $('add-open').hidden = !selected;
   $('browse').hidden = !selected;
-  if (previous !== selected) document.querySelectorAll('dialog[open]').forEach(d => d.close());
-  const {groups, total, shown, filtered} = selectItems(snapshot, selected, searchText, categoryFilter);
+  if (previous !== selected) { sourceFilter = ''; document.querySelectorAll('dialog[open]').forEach(d => d.close()); }
+  renderSources();
+  const {groups, total, shown, filtered} = selectItems(snapshot, selected, searchText, categoryFilter, Date.now(), sourceFilter);
   $('filter-summary').textContent = filtered ? `找到 ${shown} 項／共 ${total} 項${shown === 0 ? '，試試其他名稱或清除篩選。' : ''}` : `共 ${total} 項常用品`;
   for (const button of $('category-filters').children) button.setAttribute('aria-pressed', String(button.dataset.category === categoryFilter));
   for (const [status, items] of Object.entries(groups)) {
@@ -61,6 +66,9 @@ function card(item) {
   const cycle = estimate(item, snapshot.history);
   const node = el('article', 'item');
   const info = el('div', 'item-info'); info.append(el('span', 'category', item.category), el('h3', '', item.name));
+  const sourceIds = itemSourceIds(snapshot, item);
+  const sourceNames = householdSources(snapshot, item.household_id).filter(s => sourceIds.includes(s.id)).map(s => s.name);
+  info.append(el('p', 'meta source-names', sourceNames.length ? `購買：${sourceNames.join('、')}` : '尚未設定購買途徑'));
   info.append(el('p', 'meta', cycle.last ? `上次補貨 ${date(cycle.last)}` : '尚未記錄補貨'));
   if (cycle.average !== null) info.append(el('p', 'meta', `約 ${Math.round(cycle.average)} 天補一次${cycle.samples === 1 ? ' · 初步估計' : ''}`));
   const actions = el('div', 'item-actions');
@@ -111,7 +119,60 @@ async function run(button, fn) {
   finally { busy = false; document.querySelectorAll('button').forEach(b => b.disabled = false); updateDialogState(); }
 }
 function currentItem(item) { return item && snapshot.items.find(i => i.id === item.id && i.household_id === selected && !i.archived_at); }
+function chosenSources(id) { return [...$(id).querySelectorAll('input:checked')].map(input => input.value); }
+function renderSourcePicker(id, chosen = null) {
+  const container = $(id), sources = householdSources(snapshot, selected);
+  const key = JSON.stringify([selected, sources.map(s => [s.id,s.name])]);
+  if (chosen === null && container.dataset.catalog === key) return;
+  const checked = new Set(chosen ?? chosenSources(id));
+  container.dataset.catalog = key;
+  container.replaceChildren(...sources.map(source => {
+    const label = el('label', 'source-option'), input = document.createElement('input');
+    input.type = 'checkbox'; input.value = source.id; input.checked = checked.has(source.id);
+    label.append(input, el('span', '', source.name)); return label;
+  }));
+  if (!sources.length) container.append(el('p','muted','尚無購買途徑，可以先新增，或留空稍後設定。'));
+}
+function resetSourceForm() {
+  sourceEditing = null; $('source-form').reset(); $('source-name-label').textContent = '新增購買途徑';
+  $('source-save').textContent = '新增途徑'; $('source-reset').hidden = true; updateDialogState();
+}
+function renderSources() {
+  const sources = householdSources(snapshot, selected);
+  if (sourceFilter && sourceFilter !== 'unset' && !sources.some(s => s.id === sourceFilter)) sourceFilter = '';
+  const key = JSON.stringify([selected, sources]);
+  if (sourceCatalogKey !== key) {
+    sourceCatalogKey = key;
+    const chips = $('source-filters'), scrollLeft = chips.scrollLeft;
+    chips.replaceChildren(...[{id:'',name:'全部'},{id:'unset',name:'尚未設定'},...sources].map(source => {
+      const button = action(source.name,'category-chip', () => { sourceFilter = source.id; render(); });
+      button.dataset.source = source.id; return button;
+    }));
+    chips.scrollLeft = scrollLeft;
+    $('source-list').replaceChildren(...sources.map(source => {
+      const row = el('div','source-row');
+      const button = action('改名','secondary', () => {
+        sourceEditing = {...source}; $('source-name').value = source.name;
+        $('source-name-label').textContent = `修改購買途徑：${source.name}`;
+        $('source-save').textContent = '儲存名稱'; $('source-reset').hidden = false;
+        notice(''); updateDialogState(); $('source-name').focus();
+      });
+      button.setAttribute('aria-label',`修改途徑 ${source.name}`);
+      row.append(el('span','',source.name),button); return row;
+    }));
+  }
+  for (const button of $('source-filters').children) button.setAttribute('aria-pressed',String(button.dataset.source === sourceFilter));
+  const sourceLabel = sourceFilter === 'unset' ? '尚未設定' : sources.find(s => s.id === sourceFilter)?.name;
+  $('source-filter-note').textContent = sourceFilter ? `購買途徑：${sourceLabel}；與搜尋、使用分類一起篩選以下三區。` : '可與搜尋、使用分類一起篩選以下三區。';
+  renderSourcePicker('add-sources'); renderSourcePicker('edit-sources');
+}
 function updateDialogState() {
+  const latestSource = sourceEditing && householdSources(snapshot, selected).find(s => s.id === sourceEditing.id);
+  const sourceChanged = !!sourceEditing && (!latestSource || latestSource.version !== sourceEditing.version);
+  $('source-save').disabled = busy || !(snapshot.schema_version >= 3) || !selected || sourceChanged;
+  $('source-conflict').hidden = !sourceChanged;
+  $('source-conflict').textContent = '家人已修改此購買途徑，請取消改名並重新選擇。你的輸入尚未儲存。';
+  document.querySelectorAll('[data-manage-sources]').forEach(b => b.disabled = busy || !(snapshot.schema_version >= 3));
   const latestEdit = currentItem(editItem);
   const editChanged = !!editItem && (!latestEdit || latestEdit.version !== editItem.version);
   $('edit-save').disabled = busy || !latestEdit || editChanged;
@@ -135,6 +196,7 @@ function openItemMenu(item) {
 function loadEdit(item) {
   editItem = { ...item }; // 保留開啟時的 version；背景同步不能默默取代它。
   $('edit-name').value = item.name; $('edit-category').value = item.category;
+  renderSourcePicker('edit-sources', itemSourceIds(snapshot, item));
   updateDialogState();
 }
 async function manageMutation(name, args, dialog, success) {
@@ -150,8 +212,23 @@ for (const category of ['', ...categories]) {
   button.dataset.category = category; button.setAttribute('aria-pressed', String(category === ''));
   $('category-filters').append(button);
 }
+document.querySelectorAll('[data-manage-sources]').forEach(button => button.addEventListener('click', () => {
+  resetSourceForm(); notice(''); $('sources-dialog').showModal(); $('source-name').focus();
+}));
+$('source-reset').addEventListener('click', resetSourceForm);
+$('source-form').addEventListener('submit', e => {
+  e.preventDefault(); if (busy || $('source-save').disabled) return;
+  const name = $('source-name').value.trim();
+  if (!name) { notice('請輸入購買途徑名稱，不能只有空白。'); return; }
+  const args = {p_household_id:selected,p_source_id:sourceEditing?.id ?? null,p_version:sourceEditing?.version ?? null,p_name:name};
+  run(null, async () => {
+    try { await api.rpc('restock_save_source',args); }
+    catch (e) { await refresh().catch(() => {}); throw e; }
+    resetSourceForm(); await refresh(); notice('購買途徑已儲存，家庭成員可共用。');
+  });
+});
 $('search').addEventListener('input', e => { searchText = e.target.value; render(); });
-$('clear-filters').addEventListener('click', () => { searchText = ''; categoryFilter = ''; $('search').value = ''; render(); $('search').focus(); });
+$('clear-filters').addEventListener('click', () => { searchText = ''; categoryFilter = ''; sourceFilter = ''; $('search').value = ''; render(); $('search').focus(); });
 $('edit-open').addEventListener('click', () => {
   const item = currentItem(managedItem); if (!item) return;
   $('item-dialog').close(); loadEdit(item); $('edit-dialog').showModal(); $('edit-name').focus();
@@ -161,7 +238,9 @@ $('edit-form').addEventListener('submit', e => {
   e.preventDefault(); if (busy || $('edit-save').disabled) return;
   const name = $('edit-name').value.trim();
   if (!name) { notice('請輸入品項名稱，不能只有空白。'); $('edit-name').focus(); return; }
-  manageMutation('restock_update_item', {p_item_id:editItem.id, p_version:editItem.version, p_name:name, p_category:$('edit-category').value}, $('edit-dialog'), '品項已更新，補貨紀錄保持不變。');
+  const args = {p_item_id:editItem.id, p_version:editItem.version, p_name:name, p_category:$('edit-category').value};
+  if (snapshot.schema_version >= 3) args.p_source_ids = chosenSources('edit-sources');
+  manageMutation(snapshot.schema_version >= 3 ? 'restock_update_item_with_sources' : 'restock_update_item', args, $('edit-dialog'), '品項已更新，補貨紀錄保持不變。');
 });
 $('delete-open').addEventListener('click', () => {
   const item = currentItem(managedItem); if (!item) return;
@@ -188,16 +267,18 @@ $('login-form').addEventListener('submit', e => {
   e.preventDefault(); const data = new FormData(e.target);
   run(e.submitter, async () => { await api.login(data.get('email').trim(), data.get('password')); e.target.reset(); generation++; view(); await refresh(); });
 });
-$('household').addEventListener('change', e => { selected = e.target.value; render(); });
+$('household').addEventListener('change', e => { selected = e.target.value; sourceFilter = ''; render(); });
 $('refresh').addEventListener('click', e => run(e.target, refresh));
 $('account-button').addEventListener('click', () => $('account-dialog').showModal());
-$('add-open').addEventListener('click', () => { $('add-dialog').showModal(); $('add-form').elements.name.focus(); });
+$('add-open').addEventListener('click', () => { renderSourcePicker('add-sources', []); $('add-dialog').showModal(); $('add-form').elements.name.focus(); });
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
 $('add-form').addEventListener('submit', e => {
   e.preventDefault(); const data = new FormData(e.target); const name = data.get('name').trim();
   if (!name) return;
   run(e.submitter, async () => {
-    await api.rpc('restock_add_item', { p_household_id:selected, p_name:name, p_category:data.get('category'), p_low:data.has('low') });
+    const args = { p_household_id:selected, p_name:name, p_category:data.get('category'), p_low:data.has('low') };
+    if (snapshot.schema_version >= 3) args.p_source_ids = chosenSources('add-sources');
+    await api.rpc(snapshot.schema_version >= 3 ? 'restock_add_item_with_sources' : 'restock_add_item', args);
     e.target.reset(); $('add-dialog').close(); await refresh(); notice('已新增常用品。');
   });
 });
