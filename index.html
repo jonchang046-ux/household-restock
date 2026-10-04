@@ -7,7 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <title>家裡補一下｜家庭消耗品補貨助手</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="icon-180.png">
-  <link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css?v=3">
+  <link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
   <div class="shell">
@@ -19,18 +19,20 @@
       <div class="heading"><div><span class="eyebrow">常用的，一起記得</span><h1 id="house-title">家裡的常用品</h1></div><button id="refresh" class="quiet">重新整理</button></div>
       <div class="house-switch"><label for="household">共享家庭</label><select id="household"></select></div>
       <p id="sync" class="muted" aria-live="polite">正在更新…</p>
-      <section id="browse" aria-label="搜尋與分類" hidden>
-        <label class="search-label" for="search">找常用品</label>
-        <div class="search-row"><input id="search" type="search" placeholder="搜尋品項名稱，例如：洗" autocomplete="off"><button id="clear-filters" class="quiet" type="button">清除篩選</button></div>
+      <div id="search-tools" class="search-tools" hidden>
+        <label class="visually-hidden" for="search">搜尋品項名稱</label>
+        <div class="search-row"><input id="search" type="search" placeholder="搜尋品項名稱" autocomplete="off"><select id="quick-category" aria-label="使用分類快速篩選"></select></div>
+      </div>
+      <section id="browse" aria-label="分類與篩選結果" hidden>
         <div id="category-filters" class="category-filters" role="group" aria-label="分類篩選"></div>
-        <p id="filter-summary" class="muted" role="status"></p>
+        <div class="filter-status"><p id="filter-summary" class="muted" role="status"></p><button id="clear-filters" class="quiet" type="button">清除篩選</button></div>
         <p class="sort-note">依待購狀態分組，同組依分類、名稱排序。</p>
       </section>
       <div id="no-house" class="panel" hidden><h2>先加入一個家</h2><p>家庭管理者可以替你加入既有家庭；或在「家庭與帳號」建立新家庭。</p></div>
       <div id="lists">
         <section class="group shopping"><div class="section-title"><h2>該買了 <span id="low-count" class="count">0</span></h2><span>購物時看這裡</span></div><div class="source-heading"><span>購買途徑</span><button type="button" class="quiet" data-manage-sources>管理購買途徑</button></div><div id="source-filters" class="category-filters" role="group" aria-label="購買途徑篩選"></div><p id="source-filter-note" class="muted">可與搜尋、使用分類一起篩選以下三區。</p><div id="low-list"></div></section>
         <section class="group"><div class="section-title"><h2>可能快沒了 <span id="possible-count" class="count">0</span></h2></div><p class="section-note">依補貨間隔提醒，確認快沒了再加入待購。</p><div id="possible-list"></div></section>
-        <section class="group"><div class="section-title"><h2>其他常用品 <span id="normal-count" class="count">0</span></h2></div><div id="normal-list"></div></section>
+        <section class="group normal-group"><h2><button id="normal-toggle" class="normal-toggle" type="button" aria-expanded="false" aria-controls="normal-list"><span>其他常用品 <span id="normal-count" class="count">0</span></span><span id="normal-chevron" aria-hidden="true">⌄</span></button></h2><div id="normal-list" hidden></div></section>
       </div>
       <button id="add-open" class="primary add-fixed">＋ 新增常用品</button>
     </main>
@@ -43,6 +45,6 @@
   <dialog id="edit-dialog" aria-labelledby="edit-title"><form id="edit-form"><div class="dialog-heading"><h2 id="edit-title">修改品項</h2><button type="button" data-close class="quiet">取消</button></div><label for="edit-name">品項名稱</label><input id="edit-name" name="name" maxlength="80" required><label for="edit-category">使用分類</label><select id="edit-category" name="category"><option>浴廁</option><option>清潔</option><option>廚房</option><option>食品</option><option>個人用品</option><option>其他</option></select><fieldset class="source-picker"><legend>購買途徑（可多選，選填）</legend><div id="edit-sources" class="source-options"></div><button type="button" class="quiet" data-manage-sources>新增／管理購買途徑</button></fieldset><p class="muted">修改名稱、使用分類與購買途徑，補貨紀錄會保留。</p><p id="edit-conflict" class="conflict" role="status" hidden></p><button id="edit-reload" class="secondary" type="button" hidden>捨棄輸入，載入最新資料</button><button id="edit-save" class="primary" type="submit">儲存修改</button></form></dialog>
   <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description"><h2 id="delete-title">刪除品項？</h2><p id="delete-description">將從目前用品清單移除「<strong id="delete-name"></strong>」。補貨歷史與品項資料會保留，不會永久清除。此版尚未提供還原按鈕。</p><p id="delete-conflict" class="conflict" role="status" hidden></p><div class="confirm-actions"><button type="button" data-close class="secondary" autofocus>取消</button><button id="delete-confirm" type="button" class="danger">確認刪除</button></div></dialog>
   <dialog id="sources-dialog" aria-labelledby="sources-title"><div class="dialog-heading"><h2 id="sources-title">管理購買途徑</h2><button type="button" data-close class="quiet">完成</button></div><p class="muted">這個家庭的成員共用此清單。改名會一起更新所有品項的途徑名稱。</p><form id="source-form"><label for="source-name" id="source-name-label">新增購買途徑</label><input id="source-name" required maxlength="80" placeholder="例如：好市多、附近藥局"><p id="source-conflict" role="status" class="conflict" hidden></p><div class="confirm-actions"><button id="source-reset" type="button" class="secondary" hidden>取消改名</button><button id="source-save" class="primary" type="submit">新增途徑</button></div></form><div id="source-list" class="source-list"></div></dialog>
-  <script type="module" src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>

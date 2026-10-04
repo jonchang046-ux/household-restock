@@ -10,6 +10,7 @@ let selected = '', loading = false, busy = false, generation = 0;
 let refreshTask = null;
 let searchText = '', categoryFilter = '', managedItem = null, editItem = null, deleteItem = null;
 let sourceFilter = '', sourceEditing = null, sourceCatalogKey = '';
+let normalExpanded = false, normalFilterKey = '', normalFilteredOverride = null;
 const date = value => new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', year: 'numeric' }).format(new Date(value));
 function notice(message) {
   $('notice').textContent = message; $('notice').hidden = !message;
@@ -48,28 +49,40 @@ function render() {
   $('house-title').textContent = snapshot.households.find(h => h.id === selected)?.name || '家裡的常用品';
   $('no-house').hidden = !!selected; $('lists').hidden = !selected; $('add-open').hidden = !selected;
   $('browse').hidden = !selected;
+  $('search-tools').hidden = !selected;
   if (previous !== selected) { sourceFilter = ''; document.querySelectorAll('dialog[open]').forEach(d => d.close()); }
   renderSources();
   const {groups, total, shown, filtered} = selectItems(snapshot, selected, searchText, categoryFilter, Date.now(), sourceFilter);
   $('filter-summary').textContent = filtered ? `找到 ${shown} 項／共 ${total} 項${shown === 0 ? '，試試其他名稱或清除篩選。' : ''}` : `共 ${total} 項常用品`;
   for (const button of $('category-filters').children) button.setAttribute('aria-pressed', String(button.dataset.category === categoryFilter));
+  $('quick-category').value = categoryFilter;
   for (const [status, items] of Object.entries(groups)) {
     $(''+status+'-count').textContent = items.length;
     const container = $(status+'-list'); container.replaceChildren();
-    for (const item of items) container.append(card(item));
+    for (const item of items) container.append(card(item, status));
     if (!items.length) container.append(el('p', 'empty', filtered ? '此區沒有符合篩選的品項。' : {low:'目前沒有待購品項，家裡都準備好了。',possible:'有足夠補貨紀錄後，會在這裡提醒你。',normal:'把經常買的用品加進來，下次一鍵記下。'}[status]));
   }
+  // 收合只影響呈現；變更篩選時自動顯示結果，同步時保留手動切換。
+  const filterKey = JSON.stringify([selected, searchText.trim(), categoryFilter, sourceFilter]);
+  if (filterKey !== normalFilterKey) { normalFilterKey = filterKey; normalFilteredOverride = null; }
+  const expanded = filtered ? (normalFilteredOverride ?? groups.normal.length > 0) : normalExpanded;
+  $('normal-list').hidden = !expanded;
+  $('normal-toggle').setAttribute('aria-expanded', String(expanded));
+  $('normal-chevron').textContent = expanded ? '⌃' : '⌄';
   updateDialogState();
 }
 function action(label, style, handler) { const b = el('button', style, label); b.type = 'button'; b.addEventListener('click', handler); b.disabled = busy; return b; }
-function card(item) {
+function card(item, status) {
   const cycle = estimate(item, snapshot.history);
-  const node = el('article', 'item');
-  const info = el('div', 'item-info'); info.append(el('span', 'category', item.category), el('h3', '', item.name));
+  const compact = status === 'normal';
+  const node = el('article', compact ? 'item item-compact' : 'item');
+  const info = el('div', 'item-info');
+  if (compact) info.append(el('h3', '', item.name), el('span', 'category', item.category));
+  else info.append(el('span', 'category', item.category), el('h3', '', item.name));
   const sourceIds = itemSourceIds(snapshot, item);
   const sourceNames = householdSources(snapshot, item.household_id).filter(s => sourceIds.includes(s.id)).map(s => s.name);
   info.append(el('p', 'meta source-names', sourceNames.length ? `購買：${sourceNames.join('、')}` : '尚未設定購買途徑'));
-  info.append(el('p', 'meta', cycle.last ? `上次補貨 ${date(cycle.last)}` : '尚未記錄補貨'));
+  if (cycle.last) info.append(el('p', 'meta', `上次補貨 ${date(cycle.last)}`));
   if (cycle.average !== null) info.append(el('p', 'meta', `約 ${Math.round(cycle.average)} 天補一次${cycle.samples === 1 ? ' · 初步估計' : ''}`));
   const actions = el('div', 'item-actions');
   const more = action('⋯', 'quiet item-more', () => openItemMenu(item));
@@ -78,6 +91,9 @@ function card(item) {
   node.append(more);
   if (item.status === 'low') {
     actions.append(action('✓ 已補貨', 'primary', () => mutate(item, 'restock')));
+  } else if (compact) {
+    actions.append(action('快沒了', 'primary', () => mutate(item, 'low')));
+    actions.append(action('已補貨', 'quiet', () => mutate(item, 'restock')));
   } else {
     actions.append(action('已補貨', 'secondary', () => mutate(item, 'restock')));
     actions.append(action('快沒了', 'primary', () => mutate(item, 'low')));
@@ -211,7 +227,16 @@ for (const category of ['', ...categories]) {
   const button = action(category || '全部', 'category-chip', () => { categoryFilter = category; render(); });
   button.dataset.category = category; button.setAttribute('aria-pressed', String(category === ''));
   $('category-filters').append(button);
+  const option = el('option', '', category || '全部分類'); option.value = category;
+  $('quick-category').append(option);
 }
+$('quick-category').addEventListener('change', e => { categoryFilter = e.target.value; render(); });
+$('normal-toggle').addEventListener('click', () => {
+  const expanded = $('normal-toggle').getAttribute('aria-expanded') === 'true';
+  if (searchText.trim() || categoryFilter || sourceFilter) normalFilteredOverride = !expanded;
+  else normalExpanded = !expanded;
+  render();
+});
 document.querySelectorAll('[data-manage-sources]').forEach(button => button.addEventListener('click', () => {
   resetSourceForm(); notice(''); $('sources-dialog').showModal(); $('source-name').focus();
 }));
