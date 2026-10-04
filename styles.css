@@ -6,8 +6,13 @@
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .search-tools{position:sticky;top:0;z-index:3;background:#f4f7fa;padding:calc(6px + env(safe-area-inset-top,0px)) 0 6px;border-bottom:1px solid var(--line)}
 .shell>#notice{top:calc(64px + env(safe-area-inset-top,0px));z-index:4}
+/* 待購數量只描述本次購買；保持 48px 觸控範圍。 */
+.quantity-picker{display:flex;align-items:center;gap:2px;flex:0 0 auto}.quantity-step{width:48px;min-width:48px;padding:0;font-size:1.15rem}.quantity-value{min-width:28px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+.recent-activity{border-top:1px solid var(--line);margin-top:28px}.recent-activity summary{cursor:pointer;min-height:48px;padding:12px 0;font-weight:650}.recent-activity ol{list-style:none;padding:0;margin:0}.activity-row{display:grid;gap:2px;padding:12px 0;border-top:1px solid var(--line);font-size:.9rem;overflow-wrap:anywhere}
+.shell{padding-bottom:calc(130px + env(safe-area-inset-bottom,0px))}
 .search-row select{flex:0 0 116px;width:116px;padding:8px;font-size:.9rem}.search-row input{font-size:1rem}
 .filter-status{display:flex;align-items:center;justify-content:space-between;gap:8px}.filter-status .quiet{padding:8px;flex-shrink:0}
 .normal-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:4px 0;background:transparent;color:var(--navy);font-size:1.2rem;text-align:left}.normal-toggle>span:last-child{width:36px;text-align:center;font-size:1.5rem}
 .item-compact{padding:12px 64px 12px 14px;gap:8px}.item-compact h3{font-size:1rem;line-height:1.4}.item-compact .category{margin:2px 0 0}.item-compact .meta{margin:2px 0 0}.item-compact .item-actions .primary{min-width:100px}.item-compact .item-actions .quiet{padding:8px 12px;font-size:.85rem}
 @media(max-width:540px){.search-row select{flex-basis:108px;width:108px}.item-compact{padding:12px 14px;grid-template-columns:1fr;gap:6px}.item-compact .item-info{padding-right:44px}.item-compact .item-actions{justify-content:flex-start}.item-compact .item-actions>button{flex:0 0 auto}.item-compact .item-actions .primary{min-width:112px}}
+@media(max-width:540px){.item-compact{padding-top:10px;padding-bottom:10px;gap:4px}.shopping .item-actions{justify-content:space-between}.shopping .item-actions>.primary{flex:1;min-width:100px}.shell{padding-bottom:calc(130px + env(safe-area-inset-bottom,0px))}}

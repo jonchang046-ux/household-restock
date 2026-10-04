@@ -1,5 +1,7 @@
 # 家裡補一下：啟用與驗收
 
+**補貨流程更新（v5）：請閱讀 [NEXT-RELEASE.md](NEXT-RELEASE.md)。待購數量、7 天還很多、中位數預測、順便補與最近動態，需要 `004_restock_flow.sql`。本 life-tools 已完成 004 與安全驗收，無需重跑；其他環境需先完成 SQL 與驗收。不要重跑初始建置 SQL。**
+
 **購買途徑擴充：請閱讀 [PURCHASE-SOURCES.md](PURCHASE-SOURCES.md)。此功能另需 `003_purchase_sources.sql`，來源可由家庭自行新增／改名，品項可多選，並與名稱搜尋、使用分類組合篩選。發布前請先完成 migration 驗證。**
 
 **既有網站升級 v2：請先閱讀 [V2-UPGRADE.md](V2-UPGRADE.md)。只執行 `002_restock_v2.sql`，不要重跑 001、重建帳號或家庭。以下初始建置步驟只供新環境參考。**

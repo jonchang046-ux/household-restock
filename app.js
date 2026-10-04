@@ -1,7 +1,8 @@
 import { config } from './config.js';
 import { Backend } from './api.mjs';
-import { estimate } from './cycle.mjs';
-import { categories, selectItems, itemSourceIds, householdSources } from './list.mjs?v=3';
+import { estimate } from './cycle.mjs?v=5';
+import { categories, selectItems, itemSourceIds, householdSources } from './list.mjs?v=5';
+import { activityText, activityTime, recentActivity } from './activity.mjs?v=5';
 
 const $ = id => document.getElementById(id);
 const api = new Backend(config);
@@ -19,6 +20,9 @@ function notice(message) {
   if (message && dialog) { const error = el('p', 'notice dialog-error', message); error.setAttribute('role','alert'); dialog.prepend(error); }
 }
 function message(e) {
+  if (e.message.includes('INVALID_QUANTITY')) return '待購數量必須是 1 到 999 的整數。';
+  if (e.message.includes('NOT_SHOPPING')) return '此品項已離開待購清單，請確認最新狀態。';
+  if (e.message.includes('NOT_NORMAL')) return '此品項已加入待購，請確認最新狀態。';
   if (e.message.includes('STALE_SOURCE')) return '家人已修改此購買途徑，請取消改名並重新選擇最新資料。';
   if (e.message.includes('DUPLICATE_SOURCE')) return '這個家庭已有同名購買途徑，請使用現有選項。';
   if (e.message.includes('INVALID_SOURCES')) return '購買途徑無效或不屬於這個家庭，請重新整理後再選擇。';
@@ -53,6 +57,9 @@ function render() {
   if (previous !== selected) { sourceFilter = ''; document.querySelectorAll('dialog[open]').forEach(d => d.close()); }
   renderSources();
   const {groups, total, shown, filtered} = selectItems(snapshot, selected, searchText, categoryFilter, Date.now(), sourceFilter);
+  const atStore = !!sourceFilter && sourceFilter !== 'unset';
+  $('possible-title').textContent = atStore ? '可能可以順便補' : '可能快沒了';
+  $('possible-note').textContent = atStore ? '此途徑的近期品項，含未來 7 天內可能需要的用品；不會自動加入待購。' : '依補貨間隔提醒，確認快沒了再加入待購。';
   $('filter-summary').textContent = filtered ? `找到 ${shown} 項／共 ${total} 項${shown === 0 ? '，試試其他名稱或清除篩選。' : ''}` : `共 ${total} 項常用品`;
   for (const button of $('category-filters').children) button.setAttribute('aria-pressed', String(button.dataset.category === categoryFilter));
   $('quick-category').value = categoryFilter;
@@ -69,7 +76,19 @@ function render() {
   $('normal-list').hidden = !expanded;
   $('normal-toggle').setAttribute('aria-expanded', String(expanded));
   $('normal-chevron').textContent = expanded ? '⌃' : '⌄';
+  renderActivity();
   updateDialogState();
+}
+function renderActivity() {
+  $('recent-activity').hidden = !selected || snapshot.schema_version < 4;
+  const rows = recentActivity(snapshot, selected);
+  $('activity-count').textContent = rows.length;
+  $('activity-list').replaceChildren(...rows.map(event => {
+    const row = el('li', 'activity-row'), time = el('time','muted',activityTime(event.created_at));
+    time.dateTime = event.created_at;
+    row.append(time,el('span','',activityText(event,api.session()?.user.id))); return row;
+  }));
+  if (!rows.length) $('activity-list').append(el('li','empty','新版本啟用後的操作會記在這裡。'));
 }
 function action(label, style, handler) { const b = el('button', style, label); b.type = 'button'; b.addEventListener('click', handler); b.disabled = busy; return b; }
 function card(item, status) {
@@ -77,35 +96,48 @@ function card(item, status) {
   const compact = status === 'normal';
   const node = el('article', compact ? 'item item-compact' : 'item');
   const info = el('div', 'item-info');
-  if (compact) info.append(el('h3', '', item.name), el('span', 'category', item.category));
-  else info.append(el('span', 'category', item.category), el('h3', '', item.name));
+  const quantity = Number.isInteger(item.purchase_quantity) ? item.purchase_quantity : 1;
+  const name = item.status === 'low' ? `${item.name} × ${quantity}` : item.name;
+  if (compact) info.append(el('h3', '', name), el('span', 'category', item.category));
+  else info.append(el('span', 'category', item.category), el('h3', '', name));
   const sourceIds = itemSourceIds(snapshot, item);
   const sourceNames = householdSources(snapshot, item.household_id).filter(s => sourceIds.includes(s.id)).map(s => s.name);
   info.append(el('p', 'meta source-names', sourceNames.length ? `購買：${sourceNames.join('、')}` : '尚未設定購買途徑'));
   if (cycle.last) info.append(el('p', 'meta', `上次補貨 ${date(cycle.last)}`));
-  if (cycle.average !== null) info.append(el('p', 'meta', `約 ${Math.round(cycle.average)} 天補一次${cycle.samples === 1 ? ' · 初步估計' : ''}`));
+  if (cycle.period !== null) info.append(el('p', 'meta', `預估約 ${Math.round(cycle.period)} 天補一次${cycle.samples === 1 ? ' · 初步估計' : ''}`));
+  if (cycle.snoozed && item.status !== 'low') info.append(el('p','meta',`還很多 · ${date(cycle.snoozedUntil)} 再評估`));
+  if (status === 'possible' && cycle.soon) info.append(el('p','meta','預估 7 天內可能需要，可順便確認。'));
   const actions = el('div', 'item-actions');
   const more = action('⋯', 'quiet item-more', () => openItemMenu(item));
   more.setAttribute('aria-label', `${item.name}的更多操作`);
   more.setAttribute('aria-haspopup', 'dialog');
   node.append(more);
   if (item.status === 'low') {
+    if (snapshot.schema_version >= 4) {
+      const picker = el('div','quantity-picker'); picker.setAttribute('role','group'); picker.setAttribute('aria-label',`${item.name}的待購數量`);
+      const minus = action('−','secondary quantity-step',() => adjustQuantity(item,quantity-1));
+      const plus = action('＋','secondary quantity-step',() => adjustQuantity(item,quantity+1));
+      minus.setAttribute('aria-label',`減少${item.name}的待購數量`); plus.setAttribute('aria-label',`增加${item.name}的待購數量`);
+      minus.dataset.blocked = String(quantity <= 1); plus.dataset.blocked = String(quantity >= 999);
+      picker.append(minus,el('span','quantity-value',String(quantity)),plus); actions.append(picker);
+    }
     actions.append(action('✓ 已補貨', 'primary', () => mutate(item, 'restock')));
   } else if (compact) {
     actions.append(action('快沒了', 'primary', () => mutate(item, 'low')));
     actions.append(action('已補貨', 'quiet', () => mutate(item, 'restock')));
   } else {
-    actions.append(action('已補貨', 'secondary', () => mutate(item, 'restock')));
+    if (snapshot.schema_version >= 4) actions.append(action('還很多', 'secondary', () => snooze(item)));
     actions.append(action('快沒了', 'primary', () => mutate(item, 'low')));
+    actions.append(action('已補貨', 'quiet', () => mutate(item, 'restock')));
   }
   node.append(info, actions); return node;
 }
 function showHistory(item) {
   $('history-title').textContent = `${item.name}・補貨紀錄`;
   const cycle = estimate(item, snapshot.history);
-  $('history-summary').textContent = cycle.average === null ? '至少需要兩個不同日期的補貨紀錄，才能估計週期。' : `平均約 ${Math.round(cycle.average)} 天，根據 ${cycle.samples} 段間隔估計。經過平均週期的 80% 時提醒，不會自動加入待購。`;
+  $('history-summary').textContent = cycle.period === null ? '至少需要兩個不同日期的補貨紀錄，才能估計週期。' : `預估約 ${Math.round(cycle.period)} 天（${cycle.samples} 段補貨間隔的中位數${cycle.samples === 1 ? '，初步估計' : ''}）；原始平均約 ${Math.round(cycle.average)} 天。經過預估週期的 80% 時提醒，不會自動加入待購。`;
   const rows = snapshot.history.filter(h => h.item_id === item.id).sort((a,b) => b.restocked_at.localeCompare(a.restocked_at));
-  $('history-list').replaceChildren(...rows.map(h => el('li', 'history-row', new Date(h.restocked_at).toLocaleString('zh-TW'))));
+  $('history-list').replaceChildren(...rows.map(h => el('li', 'history-row', `${new Date(h.restocked_at).toLocaleString('zh-TW')}${h.purchased_quantity ? ` · 補貨 × ${h.purchased_quantity}` : ''}`)));
   if (!rows.length) $('history-list').append(el('li', 'history-row', '還沒有補貨紀錄。'));
   $('history-dialog').showModal();
 }
@@ -183,6 +215,7 @@ function renderSources() {
   renderSourcePicker('add-sources'); renderSourcePicker('edit-sources');
 }
 function updateDialogState() {
+  document.querySelectorAll('.quantity-step').forEach(button => button.disabled = busy || button.dataset.blocked === 'true');
   const latestSource = sourceEditing && householdSources(snapshot, selected).find(s => s.id === sourceEditing.id);
   const sourceChanged = !!sourceEditing && (!latestSource || latestSource.version !== sourceEditing.version);
   $('source-save').disabled = busy || !(snapshot.schema_version >= 3) || !selected || sourceChanged;
@@ -286,6 +319,20 @@ async function mutate(item, operation) {
     try { await api.rpc('restock_change_item', { p_item_id:item.id, p_version:item.version, p_operation:operation }); }
     catch (e) { await refresh().catch(() => {}); throw e; }
     await refresh(); notice(operation === 'restock' ? '已補貨，也記下這次日期了。' : operation === 'low' ? '已加入待購清單。' : '已取消待購。');
+  });
+}
+async function adjustQuantity(item, quantity) {
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) return;
+  await itemFeedback('restock_set_purchase_quantity',item,{p_quantity:quantity},'');
+}
+async function snooze(item) {
+  await itemFeedback('restock_snooze_item',item,{},'已記下還很多，7 天後再評估；沒有新增補貨紀錄。');
+}
+async function itemFeedback(rpc,item,args,success) {
+  await run(null,async () => {
+    try { await api.rpc(rpc,{p_item_id:item.id,p_version:item.version,...args}); }
+    catch (e) { await refresh().catch(() => {}); throw e; }
+    await refresh(); notice(success);
   });
 }
 $('login-form').addEventListener('submit', e => {

@@ -1,5 +1,25 @@
 # 驗證紀錄
 
+## 補貨流程正式資料庫驗收：2026-10-04
+
+- 使用者確認 004 SQL 成功後，唯讀核對 purchase_quantity DEFAULT 1、snoozed_until、歷史 purchased_quantity、新 activity 表 RLS／成員 SELECT policy，以及新 RPC 固定 search_path、authenticated EXECUTE／anon 禁止 EXECUTE。
+- 執行完整 security-check-flow.sql：所有斷言未報錯、交易 ROLLBACK。覆蓋待購數量加減／下限上限／NULL、A/B 快照數量、歷史數量與重設、snooze 保留歷史及日期、7 天截止、NULL／過期 version、編輯保留 snooze、低狀態清除 snooze、動態身份、每家庭20筆、跨家庭／非成員／anon 拒絕、表直接寫入拒絕、sources 無效時動態一起回滾、封存保留歷史與動態。這是資料庫角色／JWT 模擬，不代表真正兩支手機或同時交易已驗收。
+- 既有 security-check-sources.sql 回歸 PASS，交易 ROLLBACK。核對 __FLOW_TEST_／__SOURCES_TEST_ 品項殘留 0；不修改 Auth 或原用品／歷史。
+- 25 項 Node 測試重新通過，app.js 語法與 diff whitespace 檢查通過。
+- Security advisors 已檢查：restock authenticated SECURITY DEFINER RPC 符合既有成員檢查／封鎖表寫入模型；既有共用 rls_auto_enable 匿名可執行及 Auth 密碼保護提示屬範圍外，沒有修改。未開放新表或新 RPC 的匿名存取。
+- 實體 iPhone Safari、加入主畫面與两支手機／真正同時操作仍待使用者實測。
+
+## 補貨流程下一版：2026-10-04，等待正式 migration
+
+- 正式資料庫只做唯讀 catalog 核對，現有 RPC 與本機 001～003 一致。沒有執行 004、沒有發布新版網站。
+- Node 測試 25/25 通過（原 17＋新增 8）、app.js 語法檢查通過。新增涵蓋中位數／極端值、7 天 snooze 邊界、順便補多條件交集、動態身份與 20 筆限制。原始平均、歷史資料不被修改。
+- 真實前端搭配本機共享記憶體模擬後端、45 品項：數量 1→2→3→2、B 讀取並加到 3、A 同步看到；補貨 ×3、再次待購 ×1 通過。B 編輯草稿遇 A 數量修改時，草稿保留、儲存停用，顯示 version 衝突。
+- 還很多後兩筆歷史及上次補貨日期一致，正常區顯示再評估日期；選好市多時洗衣精／廚房紙巾進順便補，紙巾轉待購 ×1、B 補貨、A/B 動態顯示你／另一位成員正確。
+- 新增雞肉（食品、好市多、現在快沒了）與加到 ×2 通過；刪除具名二次確認、取消、確認封存與 archive 動態正常。編輯衛生紙仍保留待購 ×2。原搜尋＋浴廁＋好市多仍只顯示衛生紙。
+- 手機 iframe 390px（文件 375px）：無橫向溢出、數量按鈕 48px、常用品整列按鈕寬度與區塊一致；滑到約 4454px，sticky 搜尋 top 0、高約 62px。滑到最下方最後卡片 bottom 約197px、浮動新增 top 約770px，最後卡片可完整滑出遮擋。
+- 一般視窗前端無 console error。iframe 工具在頁面初始化記錄一次無來源 URL 的 MutationObserver 錯誤，專案與模擬腳本均無此 API，一般視窗未重現；截圖尺寸／iframe點擊亦受工具 viewport 切換影響，未將其當成 iPhone 實機證明。
+- 已產生完整 004 migration、保留資料的功能回退及 security-check-flow.sql，尚未執行正式 SQL／RLS 驗證。SQL Editor 成功後必須補做正式角色／JWT 回歸；iPhone Safari／加入主畫面、兩支手機、真正同時交易仍待驗收。
+
 ## 長清單介面優化：2026-10-04
 
 - 僅修改 index.html、app.js、styles.css 與此驗收紀錄；無 schema、RPC、RLS、Auth 或正式資料變更，無新增套件。

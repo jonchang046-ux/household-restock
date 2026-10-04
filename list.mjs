@@ -1,4 +1,4 @@
-import { estimate } from './cycle.mjs';
+import { estimate } from './cycle.mjs?v=5';
 
 export const categories = ['浴廁', '清潔', '廚房', '食品', '個人用品', '其他'];
 const collator = new Intl.Collator('zh-Hant', { numeric: true, sensitivity: 'base' });
@@ -30,6 +30,10 @@ export function selectItems(snapshot, householdId, query = '', category = '', no
       && (!sourceId || (sourceId === 'unset' ? ids.length === 0 : ids.includes(sourceId)));
   }).sort(compareItems);
   const groups = { low: [], possible: [], normal: [] };
-  for (const item of visible) groups[estimate(item, snapshot.history, now).status].push(item);
+  for (const item of visible) {
+    const cycle = estimate(item, snapshot.history, now);
+    const status = cycle.status === 'normal' && sourceId && sourceId !== 'unset' && cycle.soon ? 'possible' : cycle.status;
+    groups[status].push(item);
+  }
   return { groups, total: all.length, shown: visible.length, filtered: !!needle || !!category || !!sourceId };
 }
