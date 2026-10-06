@@ -1,6 +1,6 @@
-import { estimate } from './cycle.mjs?v=5';
+import { estimate } from './cycle.mjs?v=6';
 
-export const categories = ['浴廁', '清潔', '廚房', '食品', '個人用品', '其他'];
+export const categories = ['浴廁', '清潔', '廚房', '食品常溫', '飲料', '冷藏', '冷凍', '個人用品', '其他'];
 const collator = new Intl.Collator('zh-Hant', { numeric: true, sensitivity: 'base' });
 const normalize = value => String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('zh-Hant');
 const rank = category => { const i = categories.indexOf(category); return i < 0 ? categories.length : i; };

@@ -1,8 +1,8 @@
 import { config } from './config.js';
 import { Backend } from './api.mjs';
-import { estimate } from './cycle.mjs?v=5';
-import { categories, selectItems, itemSourceIds, householdSources } from './list.mjs?v=5';
-import { activityText, activityTime, recentActivity } from './activity.mjs?v=5';
+import { estimate } from './cycle.mjs?v=6';
+import { categories, selectItems, itemSourceIds, householdSources } from './list.mjs?v=6';
+import { activityText, activityTime, recentActivity } from './activity.mjs?v=6';
 
 const $ = id => document.getElementById(id);
 const api = new Backend(config);
@@ -256,6 +256,14 @@ async function manageMutation(name, args, dialog, success) {
     await refresh(); notice(success);
   });
 }
+// 首頁 chips、浮動篩選與新增／修改表單共用同一份使用分類。
+for (const select of [$('add-form').elements.category, $('edit-category')]) {
+  select.replaceChildren(...categories.map(category => {
+    const option = el('option', '', category); option.value = category;
+    option.defaultSelected = category === '其他'; return option;
+  }));
+}
+$('add-form').elements.category.value = '其他';
 for (const category of ['', ...categories]) {
   const button = action(category || '全部', 'category-chip', () => { categoryFilter = category; render(); });
   button.dataset.category = category; button.setAttribute('aria-pressed', String(category === ''));
