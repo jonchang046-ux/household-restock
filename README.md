@@ -1,5 +1,7 @@
 # 家裡補一下：啟用與驗收
 
+**刪除購買途徑（v7）：請閱讀 [SOURCE-DELETE-UPGRADE.md](SOURCE-DELETE-UPGRADE.md)。本 life-tools 已完成 006 與安全驗收，無需重跑。刪除僅在管理介面提供，需確認；用品與歷史保留。**
+
 **九分類更新（v6）：請閱讀 [CATEGORY-UPGRADE.md](CATEGORY-UPGRADE.md)。本 life-tools 已完成 005 與安全驗收，69 個食品轉為食品常溫，153 個品項保留，不需要重跑 SQL。既有品項可自行編輯成飲料／冷藏／冷凍。**
 
 **補貨流程更新（v5）：請閱讀 [NEXT-RELEASE.md](NEXT-RELEASE.md)。待購數量、7 天還很多、中位數預測、順便補與最近動態，需要 `004_restock_flow.sql`。本 life-tools 已完成 004 與安全驗收，無需重跑；其他環境需先完成 SQL 與驗收。不要重跑初始建置 SQL。**

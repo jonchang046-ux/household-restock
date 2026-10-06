@@ -1,4 +1,4 @@
-import { estimate } from './cycle.mjs?v=6';
+import { estimate } from './cycle.mjs?v=7';
 
 export const categories = ['浴廁', '清潔', '廚房', '食品常溫', '飲料', '冷藏', '冷凍', '個人用品', '其他'];
 const collator = new Intl.Collator('zh-Hant', { numeric: true, sensitivity: 'base' });
@@ -19,6 +19,16 @@ export function itemSourceIds(snapshot, item) {
 export function householdSources(snapshot, householdId) {
   return (snapshot.sources || []).filter(source => source.household_id === householdId)
     .slice().sort((a,b) => collator.compare(a.name,b.name) || a.id.localeCompare(b.id));
+}
+
+// 確認刪除時的目前用品集合；排除其他家庭、封存及孤立／重複關聯。
+export function sourceUsageIds(snapshot, householdId, sourceId) {
+  const active = new Set(snapshot.items.filter(i => i.household_id === householdId && !i.archived_at).map(i => i.id));
+  return [...new Set((snapshot.item_sources || []).filter(l => l.household_id === householdId && l.source_id === sourceId && active.has(l.item_id)).map(l => l.item_id))].sort();
+}
+
+export function resolveSourceFilter(snapshot, householdId, sourceId) {
+  return !sourceId || sourceId === 'unset' || householdSources(snapshot, householdId).some(s => s.id === sourceId) ? sourceId : '';
 }
 
 export function selectItems(snapshot, householdId, query = '', category = '', now = Date.now(), sourceId = '') {

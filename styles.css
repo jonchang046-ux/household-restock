@@ -9,6 +9,7 @@
 /* 待購數量只描述本次購買；保持 48px 觸控範圍。 */
 .quantity-picker{display:flex;align-items:center;gap:2px;flex:0 0 auto}.quantity-step{width:48px;min-width:48px;padding:0;font-size:1.15rem}.quantity-value{min-width:28px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
 .recent-activity{border-top:1px solid var(--line);margin-top:28px}.recent-activity summary{cursor:pointer;min-height:48px;padding:12px 0;font-weight:650}.recent-activity ol{list-style:none;padding:0;margin:0}.activity-row{display:grid;gap:2px;padding:12px 0;border-top:1px solid var(--line);font-size:.9rem;overflow-wrap:anywhere}
+.source-row>span{min-width:0;overflow-wrap:anywhere;flex:1}.source-row>button{flex-shrink:0;min-height:48px;padding:8px 12px}.source-row{gap:8px}
 .shell{padding-bottom:calc(130px + env(safe-area-inset-bottom,0px))}
 .search-row select{flex:0 0 116px;width:116px;padding:8px;font-size:.9rem}.search-row input{font-size:1rem}
 .filter-status{display:flex;align-items:center;justify-content:space-between;gap:8px}.filter-status .quiet{padding:8px;flex-shrink:0}

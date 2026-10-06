@@ -1,8 +1,8 @@
 import { config } from './config.js';
 import { Backend } from './api.mjs';
-import { estimate } from './cycle.mjs?v=6';
-import { categories, selectItems, itemSourceIds, householdSources } from './list.mjs?v=6';
-import { activityText, activityTime, recentActivity } from './activity.mjs?v=6';
+import { estimate } from './cycle.mjs?v=7';
+import { categories, selectItems, itemSourceIds, householdSources, sourceUsageIds, resolveSourceFilter } from './list.mjs?v=7';
+import { activityText, activityTime, recentActivity } from './activity.mjs?v=7';
 
 const $ = id => document.getElementById(id);
 const api = new Backend(config);
@@ -11,6 +11,7 @@ let selected = '', loading = false, busy = false, generation = 0;
 let refreshTask = null;
 let searchText = '', categoryFilter = '', managedItem = null, editItem = null, deleteItem = null;
 let sourceFilter = '', sourceEditing = null, sourceCatalogKey = '';
+let sourceDeleting = null;
 let normalExpanded = false, normalFilterKey = '', normalFilteredOverride = null;
 const date = value => new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric', year: 'numeric' }).format(new Date(value));
 function notice(message) {
@@ -23,7 +24,8 @@ function message(e) {
   if (e.message.includes('INVALID_QUANTITY')) return '待購數量必須是 1 到 999 的整數。';
   if (e.message.includes('NOT_SHOPPING')) return '此品項已離開待購清單，請確認最新狀態。';
   if (e.message.includes('NOT_NORMAL')) return '此品項已加入待購，請確認最新狀態。';
-  if (e.message.includes('STALE_SOURCE')) return '家人已修改此購買途徑，請取消改名並重新選擇最新資料。';
+  if (e.message.includes('SOURCE_USAGE_CHANGED')) return '使用此途徑的品項已改變，請取消後重新確認數量。';
+  if (e.message.includes('STALE_SOURCE')) return '家人已修改此購買途徑，請取消目前操作並重新選擇最新資料。';
   if (e.message.includes('DUPLICATE_SOURCE')) return '這個家庭已有同名購買途徑，請使用現有選項。';
   if (e.message.includes('INVALID_SOURCES')) return '購買途徑無效或不屬於這個家庭，請重新整理後再選擇。';
   if (e.message.includes('STALE_ITEM')) return '家人已更新這個品項，已重新讀取；請確認最新狀態。';
@@ -187,7 +189,7 @@ function resetSourceForm() {
 }
 function renderSources() {
   const sources = householdSources(snapshot, selected);
-  if (sourceFilter && sourceFilter !== 'unset' && !sources.some(s => s.id === sourceFilter)) sourceFilter = '';
+  sourceFilter = resolveSourceFilter(snapshot, selected, sourceFilter);
   const key = JSON.stringify([selected, sources]);
   if (sourceCatalogKey !== key) {
     sourceCatalogKey = key;
@@ -206,7 +208,20 @@ function renderSources() {
         notice(''); updateDialogState(); $('source-name').focus();
       });
       button.setAttribute('aria-label',`修改途徑 ${source.name}`);
-      row.append(el('span','',source.name),button); return row;
+      const remove = action('刪除','danger-quiet', () => {
+        if (busy) return;
+        sourceDeleting = {...source, itemIds:sourceUsageIds(snapshot, selected, source.id)};
+        $('source-delete-title').textContent = `刪除「${source.name}」？`;
+        const count = sourceDeleting.itemIds.length;
+        $('source-delete-description').textContent = count
+          ? `目前有 ${count} 個品項使用這個購買途徑。刪除後，這些品項將不再具有「${source.name}」標籤，但品項本身與補貨歷史不會被刪除。`
+          : '目前沒有品項使用這個購買途徑。刪除不會刪除品項或補貨歷史。';
+        updateDialogState(); $('source-delete-dialog').showModal();
+        $('source-delete-dialog').querySelector('[data-close]').focus();
+      });
+      remove.setAttribute('aria-label',`刪除購買途徑 ${source.name}`);
+      remove.dataset.sourceDelete = source.id;
+      row.append(el('span','',source.name),button,remove); return row;
     }));
   }
   for (const button of $('source-filters').children) button.setAttribute('aria-pressed',String(button.dataset.source === sourceFilter));
@@ -215,6 +230,13 @@ function renderSources() {
   renderSourcePicker('add-sources'); renderSourcePicker('edit-sources');
 }
 function updateDialogState() {
+  document.querySelectorAll('[data-source-delete]').forEach(button => button.disabled = busy);
+  const latestRemoval = sourceDeleting && householdSources(snapshot, selected).find(s => s.id === sourceDeleting.id);
+  const removalChanged = !!sourceDeleting && (!latestRemoval || latestRemoval.version !== sourceDeleting.version
+    || JSON.stringify(sourceUsageIds(snapshot, selected, sourceDeleting.id)) !== JSON.stringify(sourceDeleting.itemIds));
+  $('source-delete-confirm').disabled = busy || !sourceDeleting || removalChanged;
+  $('source-delete-conflict').hidden = !removalChanged;
+  $('source-delete-conflict').textContent = '購買途徑或使用它的品項已變更。請取消後重新確認，再刪除。';
   document.querySelectorAll('.quantity-step').forEach(button => button.disabled = busy || button.dataset.blocked === 'true');
   const latestSource = sourceEditing && householdSources(snapshot, selected).find(s => s.id === sourceEditing.id);
   const sourceChanged = !!sourceEditing && (!latestSource || latestSource.version !== sourceEditing.version);
@@ -282,6 +304,17 @@ document.querySelectorAll('[data-manage-sources]').forEach(button => button.addE
   resetSourceForm(); notice(''); $('sources-dialog').showModal(); $('source-name').focus();
 }));
 $('source-reset').addEventListener('click', resetSourceForm);
+$('source-delete-confirm').addEventListener('click', () => {
+  if (busy || $('source-delete-confirm').disabled) return;
+  const source = sourceDeleting;
+  run(null, async () => {
+    try { await api.rpc('restock_delete_source', {p_household_id:source.household_id,p_source_id:source.id,p_version:source.version,p_expected_item_ids:source.itemIds}); }
+    catch (e) { await refresh().catch(() => {}); throw e; }
+    $('source-delete-dialog').close(); sourceDeleting = null;
+    if (sourceEditing?.id === source.id) resetSourceForm();
+    await refresh(); notice('購買途徑已刪除，品項與補貨歷史已保留。');
+  });
+});
 $('source-form').addEventListener('submit', e => {
   e.preventDefault(); if (busy || $('source-save').disabled) return;
   const name = $('source-name').value.trim();
